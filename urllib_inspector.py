@@ -1,0 +1,177 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 reeloc10
+
+import argparse
+import re
+import sys
+import urllib.error
+import urllib.request
+
+# Comprehensive regex pattern to match ANSI escape sequences
+ANSI_ESCAPE_PATTERN = re.compile(r'''
+    \x1B  # ESC
+    (?:   # 7-bit C1 Control (not CSI)
+        [@-Z\\-_]
+    |     # or [ for CSI, followed by a control sequence
+        \[
+        [0-?]*  # Parameter bytes
+        [ -/]*  # Intermediate bytes
+        [@-~]   # Final byte
+    )
+''', re.VERBOSE)
+
+def sanitize_output(text: str) -> str:
+    """Removes ANSI escape codes and non-printable control characters,
+    while preserving standard whitespace (tabs, newlines) and UTF-8 characters.
+    """
+    if not isinstance(text, str):
+        text = str(text)
+
+    clean = ANSI_ESCAPE_PATTERN.sub('', text)
+    clean = "".join(ch for ch in clean if ord(ch) >= 32 or ch in "\t\n\r")
+    return clean
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+def inspect_url(url, follow_redirects=False):
+    """Core inspection function for library/bot usage.
+    Returns a dictionary with status, headers, body/payload, and redirect location.
+    """
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "reeloc10-inspector/1.0"}
+    )
+
+    handlers = [NoRedirectHandler] if not follow_redirects else []
+    opener = urllib.request.build_opener(*handlers)
+
+    result = {
+        "success": False,
+        "status_code": None,
+        "reason": None,
+        "effective_url": url,
+        "headers": {},
+        "body": None,
+        "is_binary": False,
+        "error": None
+    }
+
+    try:
+        with opener.open(req) as response:
+            result["success"] = True
+            result["status_code"] = response.status
+            result["reason"] = response.reason
+            result["effective_url"] = response.url
+            result["headers"] = dict(response.headers.items())
+
+            content_type = response.headers.get_content_type()
+            main_type = response.headers.get_content_maintype()
+
+            is_text = (
+                main_type == "text" or
+                content_type in {
+                    "application/json", "application/javascript",
+                    "application/xml", "application/xhtml+xml", "image/svg+xml"
+                }
+            )
+
+            if is_text:
+                result["body"] = response.read().decode("utf-8", errors="replace")
+                result["is_binary"] = False
+            else:
+                result["body"] = response.read()
+                result["is_binary"] = True
+
+    except urllib.error.HTTPError as e:
+        result["status_code"] = e.code
+        result["reason"] = e.reason
+        result["effective_url"] = e.url
+        result["headers"] = dict(e.headers.items())
+        result["body"] = e.read()
+
+    except urllib.error.URLError as e:
+        result["error"] = str(e.reason)
+
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Inspect URL headers and body with optional silence.")
+    parser.add_argument("url", help="Target URL to inspect")
+    parser.add_argument("-s", "--silent", action="store_true", help="Suppress metadata and headers, print full body only")
+
+    args = parser.parse_args()
+
+    try:
+        res = inspect_url(args.url, follow_redirects=False)
+
+        # If a network error occurred
+        if res["error"]:
+            print(f"[!] Network or URL Error: {sanitize_output(res['error'])}", file=sys.stderr)
+            sys.exit(1)
+
+        status = res["status_code"]
+        is_redirect_or_error = status >= 300
+
+        # Print all metadata and headers to stderr so stdout remains clean for piping
+        if not args.silent:
+            if is_redirect_or_error:
+                print("[!] HTTP Status received (Redirect/Error):", file=sys.stderr)
+            else:
+                print("[*] Request successful!", file=sys.stderr)
+
+            print(f"    Status Code: {status} {sanitize_output(res['reason'])}", file=sys.stderr)
+            print(f"    Effective URL: {sanitize_output(res['effective_url'])}", file=sys.stderr)
+
+            print("\n--- Response Headers ---", file=sys.stderr)
+            for header, value in res["headers"].items():
+                print(f"  {sanitize_output(header)}: {sanitize_output(value)}", file=sys.stderr)
+            print(file=sys.stderr)
+
+        # Handle body output
+        body = res["body"]
+
+        if is_redirect_or_error:
+            if not body:
+                if not args.silent:
+                    print("No response body content", file=sys.stderr)
+            else:
+                if args.silent:
+                    location = res["headers"].get("Location")
+                    if location:
+                        print(sanitize_output(location))
+                else:
+                    # Keep diagnostic body info out of stdout if it's just a redirect notification
+                    if isinstance(body, bytes):
+                        decoded_body = body.decode("utf-8", errors="replace").strip()
+                        if decoded_body:
+                            print("--- Response Body ---", file=sys.stderr)
+                            print(sanitize_output(decoded_body), file=sys.stderr)
+                    elif str(body).strip():
+                        print("--- Response Body ---", file=sys.stderr)
+                        print(sanitize_output(body), file=sys.stderr)
+
+            sys.exit(0 if 300 <= status < 400 else 1)
+
+        # Success path (200 OK, etc.)
+        if not body or (isinstance(body, bytes) and len(body) == 0):
+            if not args.silent:
+                print("No response body content", file=sys.stderr)
+        else:
+            if res["is_binary"]:
+                if not args.silent:
+                    content_type = res["headers"].get("content-type", "application/octet-stream")
+                    print(f"--- Binary Payload ({content_type}, {len(body)} bytes) ---", file=sys.stderr)
+                sys.stdout.buffer.write(body)
+                sys.stdout.flush()
+            else:
+                print(sanitize_output(body))
+
+    except KeyboardInterrupt:
+        print("\n[!] Operation cancelled by user.", file=sys.stderr)
+        sys.exit(130)
+
+if __name__ == "__main__":
+    main()
