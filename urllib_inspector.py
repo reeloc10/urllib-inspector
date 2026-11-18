@@ -35,7 +35,7 @@ class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
 
-def inspect_url(url, follow_redirects=False):
+def inspect_url(url, follow_redirects=False, stream_callback=None):
     """Core inspection function for library/bot usage.
     Returns a dictionary with status, sanitized headers, sanitized body/payload, and effective URL.
     """
@@ -85,7 +85,23 @@ def inspect_url(url, follow_redirects=False):
                 result["body"] = sanitize_output(raw_body)
                 result["is_binary"] = False
             else:
-                result["body"] = response.read()
+                # Stream binary data chunk-by-chunk for progress reporting
+                chunk_size = 8192
+                downloaded = 0
+                content_length = response.headers.get("Content-Length")
+                total_size = int(content_length) if content_length and content_length.isdigit() else None
+
+                chunks = []
+                while True:
+                    chunk = response.read(chunk_size)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    downloaded += len(chunk)
+                    if stream_callback:
+                        stream_callback(downloaded, total_size)
+
+                result["body"] = b"".join(chunks)
                 result["is_binary"] = True
 
     except urllib.error.HTTPError as e:
@@ -111,8 +127,17 @@ def main():
 
     args = parser.parse_args()
 
+    def progress_callback(downloaded, total_size):
+        if not args.silent:
+            if total_size:
+                percent = (downloaded / total_size) * 100
+                sys.stderr.write(f"\r[v] Downloading: {downloaded / (1024*1024):.2f} MB / {total_size / (1024*1024):.2f} MB ({percent:.1f}%)")
+            else:
+                sys.stderr.write(f"\r[v] Downloaded: {downloaded / (1024*1024):.2f} MB")
+            sys.stderr.flush()
+
     try:
-        res = inspect_url(args.url, follow_redirects=False)
+        res = inspect_url(args.url, follow_redirects=False, stream_callback=progress_callback)
 
         # If a network error occurred
         if res["error"]:
@@ -124,6 +149,9 @@ def main():
 
         # Print all metadata and headers to stderr so stdout remains clean for piping
         if not args.silent:
+            if res["is_binary"] and not is_redirect_or_error:
+                sys.stderr.write("\n")  # Newline after progress bar
+
             if is_redirect_or_error:
                 print("[!] HTTP Status received (Redirect/Error):", file=sys.stderr)
             else:
@@ -139,7 +167,6 @@ def main():
 
         # Handle body output
         body = res["body"]
-
 
         if is_redirect_or_error:
             if args.silent:
