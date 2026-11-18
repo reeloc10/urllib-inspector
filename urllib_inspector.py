@@ -37,7 +37,7 @@ class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 def inspect_url(url, follow_redirects=False):
     """Core inspection function for library/bot usage.
-    Returns a dictionary with status, headers, body/payload, and redirect location.
+    Returns a dictionary with status, sanitized headers, sanitized body/payload, and effective URL.
     """
     req = urllib.request.Request(
         url,
@@ -51,7 +51,7 @@ def inspect_url(url, follow_redirects=False):
         "success": False,
         "status_code": None,
         "reason": None,
-        "effective_url": url,
+        "effective_url": sanitize_output(url),
         "headers": {},
         "body": None,
         "is_binary": False,
@@ -62,9 +62,12 @@ def inspect_url(url, follow_redirects=False):
         with opener.open(req) as response:
             result["success"] = True
             result["status_code"] = response.status
-            result["reason"] = response.reason
-            result["effective_url"] = response.url
-            result["headers"] = dict(response.headers.items())
+            result["reason"] = sanitize_output(response.reason) if response.reason else None
+            result["effective_url"] = sanitize_output(response.url)
+            result["headers"] = {
+                sanitize_output(k): sanitize_output(v)
+                for k, v in response.headers.items()
+            }
 
             content_type = response.headers.get_content_type()
             main_type = response.headers.get_content_maintype()
@@ -78,7 +81,8 @@ def inspect_url(url, follow_redirects=False):
             )
 
             if is_text:
-                result["body"] = response.read().decode("utf-8", errors="replace")
+                raw_body = response.read().decode("utf-8", errors="replace")
+                result["body"] = sanitize_output(raw_body)
                 result["is_binary"] = False
             else:
                 result["body"] = response.read()
@@ -86,13 +90,16 @@ def inspect_url(url, follow_redirects=False):
 
     except urllib.error.HTTPError as e:
         result["status_code"] = e.code
-        result["reason"] = e.reason
-        result["effective_url"] = e.url
-        result["headers"] = dict(e.headers.items())
+        result["reason"] = sanitize_output(e.reason) if e.reason else None
+        result["effective_url"] = sanitize_output(e.url)
+        result["headers"] = {
+            sanitize_output(k): sanitize_output(v)
+            for k, v in e.headers.items()
+        }
         result["body"] = e.read()
 
     except urllib.error.URLError as e:
-        result["error"] = str(e.reason)
+        result["error"] = sanitize_output(str(e.reason))
 
     return result
 
@@ -109,7 +116,7 @@ def main():
 
         # If a network error occurred
         if res["error"]:
-            print(f"[!] Network or URL Error: {sanitize_output(res['error'])}", file=sys.stderr)
+            print(f"[!] Network or URL Error: {res['error']}", file=sys.stderr)
             sys.exit(1)
 
         status = res["status_code"]
@@ -122,36 +129,36 @@ def main():
             else:
                 print("[*] Request successful!", file=sys.stderr)
 
-            print(f"    Status Code: {status} {sanitize_output(res['reason'])}", file=sys.stderr)
-            print(f"    Effective URL: {sanitize_output(res['effective_url'])}", file=sys.stderr)
+            print(f"    Status Code: {status} {res['reason']}", file=sys.stderr)
+            print(f"    Effective URL: {res['effective_url']}", file=sys.stderr)
 
             print("\n--- Response Headers ---", file=sys.stderr)
             for header, value in res["headers"].items():
-                print(f"  {sanitize_output(header)}: {sanitize_output(value)}", file=sys.stderr)
+                print(f"  {header}: {value}", file=sys.stderr)
             print(file=sys.stderr)
 
         # Handle body output
         body = res["body"]
 
+
         if is_redirect_or_error:
+            if args.silent:
+                location = next((v for k, v in res["headers"].items() if k.lower() == "location"), None)
+                if location:
+                    print(sanitize_output(location))
+                sys.exit(0 if 300 <= status < 400 else 1)
+
             if not body:
-                if not args.silent:
-                    print("No response body content", file=sys.stderr)
+                print("No response body content", file=sys.stderr)
             else:
-                if args.silent:
-                    location = res["headers"].get("Location")
-                    if location:
-                        print(sanitize_output(location))
-                else:
-                    # Keep diagnostic body info out of stdout if it's just a redirect notification
-                    if isinstance(body, bytes):
-                        decoded_body = body.decode("utf-8", errors="replace").strip()
-                        if decoded_body:
-                            print("--- Response Body ---", file=sys.stderr)
-                            print(sanitize_output(decoded_body), file=sys.stderr)
-                    elif str(body).strip():
+                if isinstance(body, bytes):
+                    decoded_body = body.decode("utf-8", errors="replace").strip()
+                    if decoded_body:
                         print("--- Response Body ---", file=sys.stderr)
-                        print(sanitize_output(body), file=sys.stderr)
+                        print(sanitize_output(decoded_body), file=sys.stderr)
+                elif str(body).strip():
+                    print("--- Response Body ---", file=sys.stderr)
+                    print(sanitize_output(body), file=sys.stderr)
 
             sys.exit(0 if 300 <= status < 400 else 1)
 
@@ -167,7 +174,7 @@ def main():
                 sys.stdout.buffer.write(body)
                 sys.stdout.flush()
             else:
-                print(sanitize_output(body))
+                print(body)
 
     except KeyboardInterrupt:
         print("\n[!] Operation cancelled by user.", file=sys.stderr)
