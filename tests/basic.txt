@@ -7,3 +7,8 @@ rm -fv /dev/shm/out && date && python3 urllib_inspector.py "https://download.fed
 rm -fv /dev/shm/out && date && python3 urllib_inspector.py -s "https://download.fedoraproject.org/pub/fedora/linux/releases/45/Server/x86_64/iso/Fedora-Server-netinst-x86_64-45-1.4.iso" > /dev/shm/out
 rm -fv /dev/shm/out && date && python3 urllib_inspector.py "https://www.google.com" > /dev/shm/out
 rm -fv /dev/shm/out && date && python3 urllib_inspector.py -s "https://www.google.com" > /dev/shm/out
+
+# large file
+
+rm -fv /dev/shm/Fedora-Server-45-1.4-x86_64-CHECKSUM && date && python3 urllib_inspector.py "https://download.fedoraproject.org/pub/fedora/linux/releases/45/Server/x86_64/iso/Fedora-Server-45-1.4-x86_64-CHECKSUM" > /dev/shm/Fedora-Server-45-1.4-x86_64-CHECKSUM
+rm -fv /dev/shm/Fedora-Server-netinst-x86_64-45-1.4.iso && date && python3 urllib_inspector.py "https://<mirror>/fedora/linux/releases/45/Server/x86_64/iso/Fedora-Server-netinst-x86_64-45-1.4.iso" > /dev/shm/Fedora-Server-netinst-x86_64-45-1.4.iso
