@@ -7,6 +7,15 @@ import sys
 import urllib.error
 import urllib.request
 
+# ANSI Color Constants
+RESET = "\033[0m"
+BOLD = "\033[1m"
+RED = "\033[31m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+CYAN = "\033[36m"
+GRAY = "\033[90m"
+
 # Comprehensive regex pattern to match ANSI escape sequences
 ANSI_ESCAPE_PATTERN = re.compile(r'''
     \x1B  # ESC
@@ -85,7 +94,6 @@ def inspect_url(url, follow_redirects=False, stream_callback=None):
                 result["body"] = sanitize_output(raw_body)
                 result["is_binary"] = False
             else:
-                # Stream binary data chunk-by-chunk for progress reporting
                 chunk_size = 8192
                 downloaded = 0
                 content_length = response.headers.get("Content-Length")
@@ -131,41 +139,38 @@ def main():
         if not args.silent:
             if total_size:
                 percent = (downloaded / total_size) * 100
-                sys.stderr.write(f"\r[v] Downloading: {downloaded / (1024*1024):.2f} MB / {total_size / (1024*1024):.2f} MB ({percent:.1f}%)")
+                sys.stderr.write(f"\r{CYAN}[↓]{RESET} Downloading: {BOLD}{downloaded / (1024*1024):.2f} MB{RESET} / {total_size / (1024*1024):.2f} MB {YELLOW}({percent:.1f}%){RESET}")
             else:
-                sys.stderr.write(f"\r[v] Downloaded: {downloaded / (1024*1024):.2f} MB")
+                sys.stderr.write(f"\r{CYAN}[↓]{RESET} Downloaded: {BOLD}{downloaded / (1024*1024):.2f} MB{RESET}")
             sys.stderr.flush()
 
     try:
         res = inspect_url(args.url, follow_redirects=False, stream_callback=progress_callback)
 
-        # If a network error occurred
         if res["error"]:
-            print(f"[!] Network or URL Error: {res['error']}", file=sys.stderr)
+            print(f"{RED}[!] Network or URL Error: {res['error']}{RESET}", file=sys.stderr)
             sys.exit(1)
 
         status = res["status_code"]
         is_redirect_or_error = status >= 300
 
-        # Print all metadata and headers to stderr so stdout remains clean for piping
         if not args.silent:
             if res["is_binary"] and not is_redirect_or_error:
                 sys.stderr.write("\n")  # Newline after progress bar
 
             if is_redirect_or_error:
-                print("[!] HTTP Status received (Redirect/Error):", file=sys.stderr)
+                print(f"{YELLOW}[!] HTTP Status received (Redirect/Error):{RESET}", file=sys.stderr)
             else:
-                print("[*] Request successful!", file=sys.stderr)
+                print(f"{GREEN}[*] Request successful!{RESET}", file=sys.stderr)
 
-            print(f"    Status Code: {status} {res['reason']}", file=sys.stderr)
-            print(f"    Effective URL: {res['effective_url']}", file=sys.stderr)
+            print(f"    {BOLD}Status Code:{RESET} {CYAN}{status}{RESET} {res['reason']}", file=sys.stderr)
+            print(f"    {BOLD}Effective URL:{RESET} {res['effective_url']}", file=sys.stderr)
 
-            print("\n--- Response Headers ---", file=sys.stderr)
+            print(f"\n{GRAY}--- Response Headers ---{RESET}", file=sys.stderr)
             for header, value in res["headers"].items():
-                print(f"  {header}: {value}", file=sys.stderr)
+                print(f"  {CYAN}{header}{RESET}: {value}", file=sys.stderr)
             print(file=sys.stderr)
 
-        # Handle body output
         body = res["body"]
 
         if is_redirect_or_error:
@@ -176,35 +181,34 @@ def main():
                 sys.exit(0 if 300 <= status < 400 else 1)
 
             if not body:
-                print("No response body content", file=sys.stderr)
+                print(f"{GRAY}No response body content{RESET}", file=sys.stderr)
             else:
                 if isinstance(body, bytes):
                     decoded_body = body.decode("utf-8", errors="replace").strip()
                     if decoded_body:
-                        print("--- Response Body ---", file=sys.stderr)
+                        print(f"{GRAY}--- Response Body ---{RESET}", file=sys.stderr)
                         print(sanitize_output(decoded_body), file=sys.stderr)
                 elif str(body).strip():
-                    print("--- Response Body ---", file=sys.stderr)
+                    print(f"{GRAY}--- Response Body ---{RESET}", file=sys.stderr)
                     print(sanitize_output(body), file=sys.stderr)
 
             sys.exit(0 if 300 <= status < 400 else 1)
 
-        # Success path (200 OK, etc.)
         if not body or (isinstance(body, bytes) and len(body) == 0):
             if not args.silent:
-                print("No response body content", file=sys.stderr)
+                print(f"{GRAY}No response body content{RESET}", file=sys.stderr)
         else:
             if res["is_binary"]:
                 if not args.silent:
                     content_type = res["headers"].get("content-type", "application/octet-stream")
-                    print(f"--- Binary Payload ({content_type}, {len(body)} bytes) ---", file=sys.stderr)
+                    print(f"{GRAY}--- Binary Payload ({content_type}, {len(body)} bytes) ---{RESET}", file=sys.stderr)
                 sys.stdout.buffer.write(body)
                 sys.stdout.flush()
             else:
                 print(body)
 
     except KeyboardInterrupt:
-        print("\n[!] Operation cancelled by user.", file=sys.stderr)
+        print(f"\n{RED}[!] Operation cancelled by user.{RESET}", file=sys.stderr)
         sys.exit(130)
 
 if __name__ == "__main__":
