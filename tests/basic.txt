@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 reeloc10
+
+# basic cli tests
+
+rm -fv /dev/shm/out && date && python3 urllib_inspector.py "https://download.fedoraproject.org/pub/fedora/linux/releases/45/Server/x86_64/iso/Fedora-Server-netinst-x86_64-45-1.4.iso" > /dev/shm/out
+rm -fv /dev/shm/out && date && python3 urllib_inspector.py -s "https://download.fedoraproject.org/pub/fedora/linux/releases/45/Server/x86_64/iso/Fedora-Server-netinst-x86_64-45-1.4.iso" > /dev/shm/out
+rm -fv /dev/shm/out && date && python3 urllib_inspector.py "https://www.google.com" > /dev/shm/out
+rm -fv /dev/shm/out && date && python3 urllib_inspector.py -s "https://www.google.com" > /dev/shm/out
