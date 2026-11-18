@@ -2,9 +2,11 @@
 # Copyright 2026 reeloc10
 
 import argparse
+import json as json_lib
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # ANSI Color Constants
@@ -44,13 +46,48 @@ class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
 
-def inspect_url(url, follow_redirects=False, stream_callback=None):
+def inspect_url(
+    url,
+    follow_redirects=False,
+    stream_callback=None,
+    data_items=None,
+    raw_json=None,
+    custom_headers=None
+):
     """Core inspection function for library/bot usage.
+    Supports GET and POST (via data_items or raw_json) with custom headers.
     Returns a dictionary with status, sanitized headers, sanitized body/payload, and effective URL.
     """
+    headers = {"User-Agent": "reeloc10-inspector/1.1"}
+
+    if custom_headers:
+        for h in custom_headers:
+            if ":" in h:
+                k, v = h.split(":", 1)
+                headers[k.strip()] = v.strip()
+
+    method = "GET"
+    encoded_body = None
+
+    if raw_json is not None:
+        method = "POST"
+        encoded_body = raw_json.encode("utf-8")
+        headers.setdefault("Content-Type", "application/json")
+    elif data_items:
+        method = "POST"
+        pairs = []
+        for item in data_items:
+            if "=" in item:
+                k, v = item.split("=", 1)
+                pairs.append((k, v))
+        encoded_body = urllib.parse.urlencode(pairs).encode("utf-8")
+        headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
+
     req = urllib.request.Request(
         url,
-        headers={"User-Agent": "reeloc10-inspector/1.0"}
+        data=encoded_body,
+        headers=headers,
+        method=method
     )
 
     handlers = [NoRedirectHandler] if not follow_redirects else []
@@ -129,9 +166,12 @@ def inspect_url(url, follow_redirects=False, stream_callback=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Inspect URL headers and body with optional silence.")
+    parser = argparse.ArgumentParser(description="Inspect URL headers and body with optional silence and POST support.")
     parser.add_argument("url", help="Target URL to inspect")
     parser.add_argument("-s", "--silent", action="store_true", help="Suppress metadata and headers, print full body only")
+    parser.add_argument("-d", "--data", action="append", help="Form field key=value (repeatable, triggers POST)")
+    parser.add_argument("--json", dest="raw_json", help="Raw JSON payload string (triggers POST)")
+    parser.add_argument("-H", "--header", action="append", help="Custom header 'Key: Value' (repeatable)")
 
     args = parser.parse_args()
 
@@ -145,7 +185,14 @@ def main():
             sys.stderr.flush()
 
     try:
-        res = inspect_url(args.url, follow_redirects=False, stream_callback=progress_callback)
+        res = inspect_url(
+            args.url,
+            follow_redirects=False,
+            stream_callback=progress_callback,
+            data_items=args.data,
+            raw_json=args.raw_json,
+            custom_headers=args.header
+        )
 
         if res["error"]:
             print(f"{RED}[!] Network or URL Error: {res['error']}{RESET}", file=sys.stderr)
