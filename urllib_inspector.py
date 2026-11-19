@@ -57,14 +57,19 @@ def inspect_url(
     """Core inspection function for library/bot usage.
     Supports GET and POST (via data_items or raw_json) with custom headers.
     Returns a dictionary with status, sanitized headers, sanitized body/payload, and effective URL.
+    Accepts custom_headers as a dict ({"Key": "Value"}) or a list of strings (["Key: Value"]).
     """
     headers = {"User-Agent": "reeloc10-inspector/1.1"}
 
     if custom_headers:
-        for h in custom_headers:
-            if ":" in h:
-                k, v = h.split(":", 1)
-                headers[k.strip()] = v.strip()
+        if isinstance(custom_headers, dict):
+            for k, v in custom_headers.items():
+                headers[str(k).strip()] = str(v).strip()
+        else:
+            for h in custom_headers:
+                if ":" in str(h):
+                    k, v = str(h).split(":", 1)
+                    headers[k.strip()] = v.strip()
 
     method = "GET"
     encoded_body = None
