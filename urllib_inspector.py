@@ -52,11 +52,12 @@ def inspect_url(
     stream_callback=None,
     data_items=None,
     raw_json=None,
+    raw_data=None,
     custom_headers=None,
     method=None
 ):
     """Core inspection function for library/bot usage.
-    Supports GET, POST, PATCH, PUT with custom headers.
+    Supports GET, POST, PATCH, PUT, DELETE with custom headers and raw binary/text payloads.
     Returns a dictionary with status, sanitized headers, sanitized body/payload, and effective URL.
     Accepts custom_headers as a dict ({"Key": "Value"}) or a list of strings (["Key: Value"]).
     """
@@ -72,17 +73,19 @@ def inspect_url(
                     k, v = str(h).split(":", 1)
                     headers[k.strip()] = v.strip()
 
-    # Determine HTTP method with fallback logic
+    # Determine HTTP method with explicit override support
     if method:
         req_method = method.upper()
-    elif raw_json is not None or data_items:
+    elif raw_data is not None or raw_json is not None or data_items:
         req_method = "POST"
     else:
         req_method = "GET"
 
     encoded_body = None
 
-    if raw_json is not None:
+    if raw_data is not None:
+        encoded_body = raw_data
+    elif raw_json is not None:
         encoded_body = raw_json.encode("utf-8")
         headers.setdefault("Content-Type", "application/json")
     elif data_items:
@@ -177,12 +180,13 @@ def inspect_url(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Inspect URL headers and body with optional silence and POST support.")
+    parser = argparse.ArgumentParser(description="Inspect URL headers and body with optional silence, custom methods, and payloads.")
     parser.add_argument("url", help="Target URL to inspect")
     parser.add_argument("-s", "--silent", action="store_true", help="Suppress metadata and headers, print full body only")
-    parser.add_argument("-d", "--data", action="append", help="Form field key=value (repeatable, triggers POST)")
-    parser.add_argument("--json", dest="raw_json", help="Raw JSON payload string (triggers POST)")
+    parser.add_argument("-d", "--data", action="append", help="Form field key=value (repeatable)")
+    parser.add_argument("--json", dest="raw_json", help="Raw JSON payload string")
     parser.add_argument("-H", "--header", action="append", help="Custom header 'Key: Value' (repeatable)")
+    parser.add_argument("-X", "--method", help="Specify HTTP method (e.g., GET, POST, PATCH, PUT, DELETE)")
 
     args = parser.parse_args()
 
@@ -202,7 +206,8 @@ def main():
             stream_callback=progress_callback,
             data_items=args.data,
             raw_json=args.raw_json,
-            custom_headers=args.header
+            custom_headers=args.header,
+            method=args.method
         )
 
         if res["error"]:
