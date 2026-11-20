@@ -52,10 +52,11 @@ def inspect_url(
     stream_callback=None,
     data_items=None,
     raw_json=None,
-    custom_headers=None
+    custom_headers=None,
+    method=None
 ):
     """Core inspection function for library/bot usage.
-    Supports GET and POST (via data_items or raw_json) with custom headers.
+    Supports GET, POST, PATCH, PUT with custom headers.
     Returns a dictionary with status, sanitized headers, sanitized body/payload, and effective URL.
     Accepts custom_headers as a dict ({"Key": "Value"}) or a list of strings (["Key: Value"]).
     """
@@ -71,15 +72,20 @@ def inspect_url(
                     k, v = str(h).split(":", 1)
                     headers[k.strip()] = v.strip()
 
-    method = "GET"
+    # Determine HTTP method with fallback logic
+    if method:
+        req_method = method.upper()
+    elif raw_json is not None or data_items:
+        req_method = "POST"
+    else:
+        req_method = "GET"
+
     encoded_body = None
 
     if raw_json is not None:
-        method = "POST"
         encoded_body = raw_json.encode("utf-8")
         headers.setdefault("Content-Type", "application/json")
     elif data_items:
-        method = "POST"
         pairs = []
         for item in data_items:
             if "=" in item:
@@ -92,7 +98,7 @@ def inspect_url(
         url,
         data=encoded_body,
         headers=headers,
-        method=method
+        method=req_method
     )
 
     handlers = [NoRedirectHandler] if not follow_redirects else []
