@@ -1,7 +1,9 @@
-
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 reeloc10
 
 # post cli tests
+# SECURITY WARNING: Sending client secrets via bash command-line arguments is not advised
+# as arguments can be exposed in process lists (e.g., ps aux).
+# Consider reviewing https://github.com/reeloc10/reeloc10bot.git for a more secure implementation.
 
 rm -fv /dev/shm/out && date && python3 urllib_inspector.py "https://id.twitch.tv/oauth2/token" -d "client_id=$TWITCH_CLIENT_ID" -d "client_secret=$TWITCH_CLIENT_SECRET" -d "grant_type=client_credentials" > /dev/shm/out
