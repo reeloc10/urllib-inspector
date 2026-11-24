@@ -36,4 +36,4 @@ else:
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See the SPDX identifier header in urllib_inspector.py.
+Licensed under the Apache License, Version 2.0.
